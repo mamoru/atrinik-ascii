@@ -533,6 +533,7 @@ class Client(object):
     ST_INIT, \
     ST_METASERVER, \
     ST_WAITMETASERVER, \
+    ST_CHOOSESERVER, \
     ST_CONNECT, \
     ST_WAITCONNECT, \
     ST_VERSION, \
@@ -543,7 +544,7 @@ class Client(object):
     ST_WAITLOGIN, \
     ST_CHARACTERS, \
     ST_WAITPLAY, \
-    ST_PLAY = range(14)
+    ST_PLAY = range(15)
 
     def __init__(self, screen):
         self.screen = screen
@@ -553,6 +554,7 @@ class Client(object):
 
         self.screen.bkgd(curses.color_pair(1))
         self.screen.refresh()
+        self.screen.nodelay(1)
 
         self.height, self.width = screen.getmaxyx()
 
@@ -570,6 +572,7 @@ class Client(object):
 
         self.alive = True
         self.state = self.ST_INIT
+        self.selection_keys = string.digits[1:] + string.ascii_lowercase
 
     def show_text(self, text, center = True, win = "main", clear = True, align = None, valign = None):
         if clear:
@@ -652,16 +655,28 @@ _- -   | | _- _
     def show_servers(self):
         self.show_intro_gfx()
         self.show_text("Select server to connect to:\n\n{}".format("\n".join("{}: {}".format(i + 1, server["name"]) for i, server in enumerate(self.servers))), clear = False)
-        idx = self.screen.getch() - ord("1")
 
-        if idx >= 0 and idx < len(self.servers):
+        c = self.screen.getch()
+
+        if c == -1:
+            return
+
+        if chr(c) in self.selection_keys:
+            idx = self.selection_keys.index(chr(c))
+
+            if idx >= len(self.servers):
+                return
+
             self.server = self.servers[idx]
-            self.state = self.ST_CONNECT
+            self.state += 1
 
     def show_login(self):
         self.show_intro_gfx()
         self.show_text("Connected to {}.\n1: Login\n2: Register".format(self.server["name"]), clear = False)
         c = self.screen.getch()
+
+        if c == -1:
+            return
 
         if c == ord("1"):
             self.show_intro_gfx()
@@ -674,6 +689,7 @@ _- -   | | _- _
             pswd = self.wins["main"].getstr()
 
             self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_LOGIN), name, "\0", pswd, "\0"]))
+            self.state += 1
         elif c == ord("2"):
             self.show_intro_gfx()
             self.show_text("Enter new account name:\n", clear = False)
@@ -687,78 +703,43 @@ _- -   | | _- _
             pswd2 = self.wins["main"].getstr()
 
             self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_REGISTER), name, "\0", pswd, "\0", pswd2, "\0"]))
+            self.state += 1
 
     def show_characters(self):
-        keys = string.digits[1:] + string.ascii_lowercase
         self.show_intro_gfx()
-        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
+        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
         c = self.screen.getch()
 
-        if chr(c) in keys:
-            idx = keys.index(chr(c))
+        if c == -1:
+            return
+
+        if chr(c) in self.selection_keys:
+            idx = self.selection_keys.index(chr(c))
+
+            if idx >= len(self.characters):
+                return
+
             self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR), self.characters[idx]["name"], "\0"]))
+            self.state += 1
 
     def loop(self):
         while self.alive:
-            if self.state == self.ST_INIT:
-                self.show_intro_gfx()
-                self.show_text("Welcome to Atrinik!\nPlease wait, connecting to the metaserver...", clear = False)
-                self.state += 1
-            elif self.state == self.ST_METASERVER:
-                self.metaserver_thread.cmd_q.put(ClientCommand(ClientCommand.CONNECT, self.get_metaservers()))
-                self.state += 1
-            elif self.state == self.ST_CONNECT:
-                self.show_intro_gfx()
-                self.show_text("Connecting to {}...".format(self.server["name"]), clear = False)
-                self.cpl = ClientPlayer()
-                self.connect(self.server)
-                self.state += 1
-            elif self.state == self.ST_VERSION:
-                self.send_command(ServerCommands.VERSION, struct.pack("!L", 1058))
-                self.state += 1
-            elif self.state == self.ST_SETUP:
-                self.send_command(ServerCommands.SETUP, struct.pack("!BB", ServerCommands.SETUP_SOUND, 0))
-                self.state += 1
-            elif self.state == self.ST_LOGIN:
-                self.show_login()
-                self.state += 1
-            elif self.state == self.ST_CHARACTERS:
-                self.show_characters()
-                self.state += 1
-            elif self.state == self.ST_PLAY:
-                self.screen.nodelay(1)
-                height, width = self.wins["main"].getmaxyx()
-                self.show_text(self.map.render(width = width - 2, height = height))
-
-                c = self.screen.getch()
-
-                if c == curses.KEY_UP:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 1, 0))
-                elif c == curses.KEY_DOWN:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 5, 0))
-                elif c == curses.KEY_RIGHT:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 3, 0))
-                elif c == curses.KEY_LEFT:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 7, 0))
-
             while True:
                 try:
-                    cmd = self.metaserver_thread.reply_q.get(True, 0.1)
+                    cmd = self.metaserver_thread.reply_q.get_nowait()
 
-                    if cmd.cmd_type == ClientCommand.CONNECT:
-                        self.state += 1
-                    elif cmd.cmd_type == ClientCommand.CLOSE:
+                    if cmd.cmd_type == ClientCommand.CLOSE:
                         if cmd.type == ClientReply.ERROR:
                             self.show_text("Failed to connect to metaserver: {}".format(cmd.data.data))
                     elif cmd.cmd_type == ClientCommand.DATA:
                         self.servers = cmd.data
-                        self.show_servers()
+                        self.state += 1
                 except Queue.Empty as e:
                     break
 
             while True:
                 try:
-                    cmd = self.socket_thread.reply_q.get(True, 0.1)
+                    cmd = self.socket_thread.reply_q.get_nowait()
 
                     if cmd.cmd_type == ClientCommand.CONNECT:
                         self.state += 1
@@ -774,11 +755,47 @@ _- -   | | _- _
                 except Queue.Empty as e:
                     break
 
-            try:
-                time.sleep(0.01)
-            except KeyboardInterrupt:
-                self.alive = False
-                self.socket_thread.alive.clear()
+            if self.state == self.ST_INIT:
+                self.show_intro_gfx()
+                self.show_text("Welcome to Atrinik!\nPlease wait, connecting to the metaserver...", clear = False)
+                self.state += 1
+            elif self.state == self.ST_METASERVER:
+                self.metaserver_thread.cmd_q.put(ClientCommand(ClientCommand.CONNECT, self.get_metaservers()))
+                self.state += 1
+            elif self.state == self.ST_CHOOSESERVER:
+                self.show_servers()
+            elif self.state == self.ST_CONNECT:
+                self.show_intro_gfx()
+                self.show_text("Connecting to {}...".format(self.server["name"]), clear = False)
+                self.cpl = ClientPlayer()
+                self.connect(self.server)
+                self.state += 1
+            elif self.state == self.ST_VERSION:
+                self.send_command(ServerCommands.VERSION, struct.pack("!L", 1058))
+                self.state += 1
+            elif self.state == self.ST_SETUP:
+                self.send_command(ServerCommands.SETUP, struct.pack("!BB", ServerCommands.SETUP_SOUND, 0))
+                self.state += 1
+            elif self.state == self.ST_LOGIN:
+                self.show_login()
+            elif self.state == self.ST_CHARACTERS:
+                self.show_characters()
+            elif self.state == self.ST_PLAY:
+                height, width = self.wins["main"].getmaxyx()
+                self.show_text(self.map.render(width = width - 2, height = height))
+
+                c = self.screen.getch()
+
+                if c == curses.KEY_UP:
+                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 1, 0))
+                elif c == curses.KEY_DOWN:
+                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 5, 0))
+                elif c == curses.KEY_RIGHT:
+                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 3, 0))
+                elif c == curses.KEY_LEFT:
+                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 7, 0))
+
+            time.sleep(0.01)
 
 def main(screen):
     logging.basicConfig(filename = "client.log",
