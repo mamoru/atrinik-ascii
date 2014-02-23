@@ -144,6 +144,7 @@ class SocketClientThread(threading.Thread):
     def _handle_CONNECT(self, cmd):
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.socket.connect((cmd.data[0], cmd.data[1]))
             self.reply_q.put(ClientReply(cmd.type, ClientReply.SUCCESS, cmd))
         except IOError as e:
