@@ -781,7 +781,11 @@ _- -   | | _- _
                 self.socket_thread.alive.clear()
 
 def main(screen):
-    logging.basicConfig(filename = 'client.log', filemode = "w", level = logging.DEBUG, format="%(levelname)s: %(message)s")
+    logging.basicConfig(filename = "client.log",
+                        filemode = "w",
+                        level = logging.DEBUG,
+                        format = "%(asctime)s.%(msecs).03d %(levelname)8s: %(message)s",
+                        datefmt = "%Y-%m-%d %H:%M:%S")
     client = Client(screen)
     client.state = client.ST_INIT
     client.loop()
