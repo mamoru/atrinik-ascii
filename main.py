@@ -590,7 +590,7 @@ class Client(object):
             align = "center"
             valign = "middle"
 
-        lines = str(text).split("\n")[-height:]
+        lines = text.split("\n")[-height:]
 
         if align == "right":
             longest = max(len(line) for line in lines)
@@ -710,7 +710,7 @@ _- -   | | _- _
 
     def show_characters(self):
         self.show_intro_gfx()
-        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {} ({})".format(self.selection_keys[i], character["name"], character["level"]) for i, character in enumerate(self.characters))), clear = False)
+        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
         c = self.screen.getch()
 
         if c == -1:
