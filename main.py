@@ -280,6 +280,9 @@ class CommandHandler:
             if ext_flags & CommandHandler.MAP2_FLAG_EXT_ANIM:
                 data = data[3:]
 
+        height, width = self.wins["main"].getmaxyx()
+        self.show_text(self.map.render(width = width - 2, height = height))
+
     def handle_command_characters(self, data):
         if len(data) == 0:
             self.state -= 1
@@ -305,6 +308,10 @@ class CommandHandler:
                 "name": name,
                 "level": level,
             })
+
+
+        self.show_intro_gfx()
+        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
 
     def handle_command_player(self, data):
         if self.state == self.ST_WAITPLAY:
@@ -334,6 +341,9 @@ class CommandHandler:
     def handle_command_setup(self, data):
         if self.state == self.ST_WAITSETUP:
             self.state += 1
+
+            self.show_intro_gfx()
+            self.show_text("Connected to {}.\n1: Login\n2: Register".format(self.server["name"]), clear = False)
 
     commands = [
         ("Map", handle_command_map),
@@ -655,76 +665,6 @@ _- -   | | _- _
       // \\
         """, align = "left", valign = "top", clear = False)
 
-    def show_servers(self):
-        self.show_intro_gfx()
-        self.show_text("Select server to connect to:\n\n{}".format("\n".join("{}: {}".format(i + 1, server["name"]) for i, server in enumerate(self.servers))), clear = False)
-
-        c = self.screen.getch()
-
-        if c == -1:
-            return
-
-        if chr(c) in self.selection_keys:
-            idx = self.selection_keys.index(chr(c))
-
-            if idx >= len(self.servers):
-                return
-
-            self.server = self.servers[idx]
-            self.state += 1
-
-    def show_login(self):
-        self.show_intro_gfx()
-        self.show_text("Connected to {}.\n1: Login\n2: Register".format(self.server["name"]), clear = False)
-        c = self.screen.getch()
-
-        if c == -1:
-            return
-
-        if c == ord("1"):
-            self.show_intro_gfx()
-            self.show_text("Enter your account name:\n", clear = False)
-            curses.echo()
-            name = self.wins["main"].getstr()
-            curses.noecho()
-            self.show_intro_gfx()
-            self.show_text("Enter your account password:\n", clear = False)
-            pswd = self.wins["main"].getstr()
-
-            self.send_command(ServerCommands.ACCOUNT, struct.pack("B", ServerCommands.ACCOUNT_LOGIN) + name + b"\0" + pswd + b"\0")
-            self.state += 1
-        elif c == ord("2"):
-            self.show_intro_gfx()
-            self.show_text("Enter new account name:\n", clear = False)
-            curses.echo()
-            name = self.wins["main"].getstr()
-            curses.noecho()
-            self.show_intro_gfx()
-            self.show_text("Enter password:\n")
-            pswd = self.wins["main"].getstr()
-            self.show_text("Verify password:\n")
-            pswd2 = self.wins["main"].getstr()
-
-            self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_REGISTER), name, "\0", pswd, "\0", pswd2, "\0"]))
-            self.state += 1
-
-    def show_characters(self):
-        self.show_intro_gfx()
-        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
-        c = self.screen.getch()
-
-        if c == -1:
-            return
-
-        if chr(c) in self.selection_keys:
-            idx = self.selection_keys.index(chr(c))
-
-            if idx >= len(self.characters):
-                return
-
-            self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"].encode("ascii"))
-            self.state += 1
-
     def loop(self):
         while self.alive:
             while True:
@@ -736,6 +676,8 @@ _- -   | | _- _
                             self.show_text("Failed to connect to metaserver: {}".format(cmd.data.data))
                     elif cmd.cmd_type == ClientCommand.DATA:
                         self.servers = cmd.data
+                        self.show_intro_gfx()
+                        self.show_text("Select server to connect to:\n\n{}".format("\n".join("{}: {}".format(i + 1, server["name"]) for i, server in enumerate(self.servers))), clear = False)
                         self.state += 1
                 except queue.Empty as e:
                     break
@@ -766,7 +708,14 @@ _- -   | | _- _
                 self.metaserver_thread.cmd_q.put(ClientCommand(ClientCommand.CONNECT, self.get_metaservers()))
                 self.state += 1
             elif self.state == self.ST_CHOOSESERVER:
-                self.show_servers()
+                c = self.screen.getch()
+
+                if c != -1 and chr(c) in self.selection_keys:
+                    idx = self.selection_keys.index(chr(c))
+
+                    if idx < len(self.servers):
+                        self.server = self.servers[idx]
+                        self.state += 1
             elif self.state == self.ST_CONNECT:
                 self.show_intro_gfx()
                 self.show_text("Connecting to {}...".format(self.server["name"]), clear = False)
@@ -780,13 +729,44 @@ _- -   | | _- _
                 self.send_command(ServerCommands.SETUP, struct.pack("!BB", ServerCommands.SETUP_SOUND, 0))
                 self.state += 1
             elif self.state == self.ST_LOGIN:
-                self.show_login()
-            elif self.state == self.ST_CHARACTERS:
-                self.show_characters()
-            elif self.state == self.ST_PLAY:
-                height, width = self.wins["main"].getmaxyx()
-                self.show_text(self.map.render(width = width - 2, height = height))
+                c = self.screen.getch()
 
+                if c == ord("1"):
+                    self.show_intro_gfx()
+                    self.show_text("Enter your account name:\n", clear = False)
+                    curses.echo()
+                    name = self.wins["main"].getstr()
+                    curses.noecho()
+                    self.show_intro_gfx()
+                    self.show_text("Enter your account password:\n", clear = False)
+                    pswd = self.wins["main"].getstr()
+
+                    self.send_command(ServerCommands.ACCOUNT, struct.pack("B", ServerCommands.ACCOUNT_LOGIN) + name + b"\0" + pswd + b"\0")
+                    self.state += 1
+                elif c == ord("2"):
+                    self.show_intro_gfx()
+                    self.show_text("Enter new account name:\n", clear = False)
+                    curses.echo()
+                    name = self.wins["main"].getstr()
+                    curses.noecho()
+                    self.show_intro_gfx()
+                    self.show_text("Enter password:\n")
+                    pswd = self.wins["main"].getstr()
+                    self.show_text("Verify password:\n")
+                    pswd2 = self.wins["main"].getstr()
+
+                    self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_REGISTER), name, "\0", pswd, "\0", pswd2, "\0"]))
+                    self.state += 1
+            elif self.state == self.ST_CHARACTERS:
+                c = self.screen.getch()
+
+                if c != -1 and chr(c) in self.selection_keys:
+                    idx = self.selection_keys.index(chr(c))
+
+                    if idx < len(self.characters):
+                        self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"].encode("ascii"))
+                        self.state += 1
+            elif self.state == self.ST_PLAY:
                 c = self.screen.getch()
 
                 if c == curses.KEY_UP:
