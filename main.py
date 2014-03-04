@@ -722,7 +722,7 @@ _- -   | | _- _
             if idx >= len(self.characters):
                 return
 
-            self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR), self.characters[idx]["name"], "\0"]))
+            self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"] + b"\0")
             self.state += 1
 
     def loop(self):
