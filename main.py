@@ -317,7 +317,7 @@ class CommandHandler:
     def handle_command_drawinfo(self, data):
         type, color = struct.unpack("!B6s", data[:7])
         msg = data[8:-1]
-        self.show_text(msg, win = "status", center = False)
+        self.show_text(msg.decode("UTF-8"), win = "status", center = False)
 
     def handle_command_version(self, data):
         try:
@@ -710,7 +710,7 @@ _- -   | | _- _
 
     def show_characters(self):
         self.show_intro_gfx()
-        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
+        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {} ({})".format(self.selection_keys[i], character["name"].decode("UTF-8"), character["level"]) for i, character in enumerate(self.characters))), clear = False)
         c = self.screen.getch()
 
         if c == -1:
