@@ -590,7 +590,7 @@ class Client(object):
             align = "center"
             valign = "middle"
 
-        lines = text.split("\n")[-height:]
+        lines = str(text).split("\n")[-height:]
 
         if align == "right":
             longest = max(len(line) for line in lines)
