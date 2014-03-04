@@ -166,7 +166,7 @@ class SocketClientThread(threading.Thread):
             self.reply_q.put(ClientReply(cmd.type, ClientReply.ERROR, str(e)))
 
 def data_get_str(data):
-    idx = data.find("\x00")
+    idx = data.find(b"\0")
     s = ""
 
     if idx != -1:
