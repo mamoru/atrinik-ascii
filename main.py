@@ -508,8 +508,8 @@ class MapObject(object):
     def render(self, width = 20, height = 20):
         l = [[" " for x in range(width)] for y in range(height)]
 
-        for x2, x in enumerate(range(self.pos[0] - width / 2, self.pos[0] + width / 2)):
-            for y2, y in enumerate(range(self.pos[1] - height / 2, self.pos[1] + height / 2)):
+        for x2, x in enumerate(range(self.pos[0] - width // 2, self.pos[0] + width // 2)):
+            for y2, y in enumerate(range(self.pos[1] - height // 2, self.pos[1] + height // 2)):
                 if not x in self.tiles or not y in self.tiles[x]:
                     continue
 
