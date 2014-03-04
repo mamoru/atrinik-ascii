@@ -600,12 +600,12 @@ class Client(object):
             y += 1
 
             if align == "center":
-                x += width / 2 - len(line) / 2
+                x += width // 2 - len(line) // 2
             elif align == "right":
                 x += width - longest
 
             if valign == "middle":
-                y += height / 2 - len(lines) / 2
+                y += height // 2 - len(lines) // 2
             elif valign == "bottom":
                 y += height - len(lines)
 
