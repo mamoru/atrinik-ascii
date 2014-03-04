@@ -84,7 +84,7 @@ class SocketClientThread(threading.Thread):
         }
 
     def run(self):
-        buffer = r""
+        buffer = bytes()
         header_len = -1
         data_len = -1
 
