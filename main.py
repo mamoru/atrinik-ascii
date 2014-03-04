@@ -3,9 +3,9 @@ import select
 import struct
 import threading
 try:
-    from Queue import Queue
+    import queue
 except ImportError:
-    from queue import Queue
+    import Queue as queue
 import time
 import re
 import curses
@@ -30,8 +30,8 @@ class ClientReply(object):
 class MetaserverThread(threading.Thread):
     def __init__(self):
         super(MetaserverThread, self).__init__()
-        self.cmd_q = Queue.Queue()
-        self.reply_q = Queue.Queue()
+        self.cmd_q = queue.Queue()
+        self.reply_q = queue.Queue()
         self.alive = threading.Event()
         self.alive.set()
 
@@ -65,14 +65,14 @@ class MetaserverThread(threading.Thread):
             try:
                 cmd = self.cmd_q.get(True, 0.1)
                 self.handlers[cmd.type](cmd)
-            except Queue.Empty as e:
+            except queue.Empty as e:
                 pass
 
 class SocketClientThread(threading.Thread):
     def __init__(self):
         super(SocketClientThread, self).__init__()
-        self.cmd_q = Queue.Queue()
-        self.reply_q = Queue.Queue()
+        self.cmd_q = queue.Queue()
+        self.reply_q = queue.Queue()
         self.alive = threading.Event()
         self.alive.set()
         self.socket = None
@@ -90,10 +90,10 @@ class SocketClientThread(threading.Thread):
 
         while self.alive.isSet():
             try:
-                # Queue.get with timeout to allow checking self.alive
+                # queue.get with timeout to allow checking self.alive
                 cmd = self.cmd_q.get(True, 0.1)
                 self.handlers[cmd.type](cmd)
-            except Queue.Empty as e:
+            except queue.Empty as e:
                 pass
 
             if not self.socket:
@@ -737,7 +737,7 @@ _- -   | | _- _
                     elif cmd.cmd_type == ClientCommand.DATA:
                         self.servers = cmd.data
                         self.state += 1
-                except Queue.Empty as e:
+                except queue.Empty as e:
                     break
 
             while True:
@@ -755,7 +755,7 @@ _- -   | | _- _
                             fnc(self, cmd.data[1:])
                         else:
                             logging.warning("Unimplemented command: {}".format(int(struct.unpack("!B", cmd.data[:1])[0])))
-                except Queue.Empty as e:
+                except queue.Empty as e:
                     break
 
             if self.state == self.ST_INIT:
