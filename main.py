@@ -170,7 +170,7 @@ def data_get_str(data):
     s = ""
 
     if idx != -1:
-        s = data[:idx]
+        s = data[:idx].decode("ascii")
         data = data[idx + 1:]
 
     return data, s
@@ -316,8 +316,8 @@ class CommandHandler:
 
     def handle_command_drawinfo(self, data):
         type, color = struct.unpack("!B6s", data[:7])
-        msg = data[8:-1]
-        self.show_text(msg.decode("UTF-8"), win = "status", center = False)
+        data, msg = data_get_str(data[8:])
+        self.show_text(msg, win = "status", center = False)
 
     def handle_command_version(self, data):
         try:
@@ -710,7 +710,7 @@ _- -   | | _- _
 
     def show_characters(self):
         self.show_intro_gfx()
-        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {} ({})".format(self.selection_keys[i], character["name"].decode("UTF-8"), character["level"]) for i, character in enumerate(self.characters))), clear = False)
+        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {} ({})".format(self.selection_keys[i], character["name"], character["level"]) for i, character in enumerate(self.characters))), clear = False)
         c = self.screen.getch()
 
         if c == -1:
@@ -722,7 +722,7 @@ _- -   | | _- _
             if idx >= len(self.characters):
                 return
 
-            self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"] + b"\0")
+            self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"].encode("ascii"))
             self.state += 1
 
     def loop(self):
