@@ -2,7 +2,10 @@ import socket
 import select
 import struct
 import threading
-import Queue
+try:
+    from Queue import Queue
+except ImportError:
+    from queue import Queue
 import time
 import re
 import curses
