@@ -2,7 +2,10 @@ import socket
 import select
 import struct
 import threading
-import Queue
+try:
+    import queue
+except ImportError:
+    import Queue as queue
 import time
 import re
 import curses
@@ -27,8 +30,8 @@ class ClientReply(object):
 class MetaserverThread(threading.Thread):
     def __init__(self):
         super(MetaserverThread, self).__init__()
-        self.cmd_q = Queue.Queue()
-        self.reply_q = Queue.Queue()
+        self.cmd_q = queue.Queue()
+        self.reply_q = queue.Queue()
         self.alive = threading.Event()
         self.alive.set()
 
@@ -62,14 +65,14 @@ class MetaserverThread(threading.Thread):
             try:
                 cmd = self.cmd_q.get(True, 0.1)
                 self.handlers[cmd.type](cmd)
-            except Queue.Empty as e:
+            except queue.Empty as e:
                 pass
 
 class SocketClientThread(threading.Thread):
     def __init__(self):
         super(SocketClientThread, self).__init__()
-        self.cmd_q = Queue.Queue()
-        self.reply_q = Queue.Queue()
+        self.cmd_q = queue.Queue()
+        self.reply_q = queue.Queue()
         self.alive = threading.Event()
         self.alive.set()
         self.socket = None
@@ -81,16 +84,16 @@ class SocketClientThread(threading.Thread):
         }
 
     def run(self):
-        buffer = r""
+        buffer = bytes()
         header_len = -1
         data_len = -1
 
         while self.alive.isSet():
             try:
-                # Queue.get with timeout to allow checking self.alive
+                # queue.get with timeout to allow checking self.alive
                 cmd = self.cmd_q.get(True, 0.1)
                 self.handlers[cmd.type](cmd)
-            except Queue.Empty as e:
+            except queue.Empty as e:
                 pass
 
             if not self.socket:
@@ -163,11 +166,11 @@ class SocketClientThread(threading.Thread):
             self.reply_q.put(ClientReply(cmd.type, ClientReply.ERROR, str(e)))
 
 def data_get_str(data):
-    idx = data.find("\x00")
+    idx = data.find(b"\0")
     s = ""
 
     if idx != -1:
-        s = data[:idx]
+        s = data[:idx].decode("ascii")
         data = data[idx + 1:]
 
     return data, s
@@ -313,7 +316,7 @@ class CommandHandler:
 
     def handle_command_drawinfo(self, data):
         type, color = struct.unpack("!B6s", data[:7])
-        msg = data[8:-1]
+        data, msg = data_get_str(data[8:])
         self.show_text(msg, win = "status", center = False)
 
     def handle_command_version(self, data):
@@ -505,8 +508,8 @@ class MapObject(object):
     def render(self, width = 20, height = 20):
         l = [[" " for x in range(width)] for y in range(height)]
 
-        for x2, x in enumerate(range(self.pos[0] - width / 2, self.pos[0] + width / 2)):
-            for y2, y in enumerate(range(self.pos[1] - height / 2, self.pos[1] + height / 2)):
+        for x2, x in enumerate(range(self.pos[0] - width // 2, self.pos[0] + width // 2)):
+            for y2, y in enumerate(range(self.pos[1] - height // 2, self.pos[1] + height // 2)):
                 if not x in self.tiles or not y in self.tiles[x]:
                     continue
 
@@ -597,12 +600,12 @@ class Client(object):
             y += 1
 
             if align == "center":
-                x += width / 2 - len(line) / 2
+                x += width // 2 - len(line) // 2
             elif align == "right":
                 x += width - longest
 
             if valign == "middle":
-                y += height / 2 - len(lines) / 2
+                y += height // 2 - len(lines) // 2
             elif valign == "bottom":
                 y += height - len(lines)
 
@@ -688,7 +691,7 @@ _- -   | | _- _
             self.show_text("Enter your account password:\n", clear = False)
             pswd = self.wins["main"].getstr()
 
-            self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_LOGIN), name, "\0", pswd, "\0"]))
+            self.send_command(ServerCommands.ACCOUNT, struct.pack("B", ServerCommands.ACCOUNT_LOGIN) + name + b"\0" + pswd + b"\0")
             self.state += 1
         elif c == ord("2"):
             self.show_intro_gfx()
@@ -719,7 +722,7 @@ _- -   | | _- _
             if idx >= len(self.characters):
                 return
 
-            self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR), self.characters[idx]["name"], "\0"]))
+            self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"].encode("ascii"))
             self.state += 1
 
     def loop(self):
@@ -734,7 +737,7 @@ _- -   | | _- _
                     elif cmd.cmd_type == ClientCommand.DATA:
                         self.servers = cmd.data
                         self.state += 1
-                except Queue.Empty as e:
+                except queue.Empty as e:
                     break
 
             while True:
@@ -752,7 +755,7 @@ _- -   | | _- _
                             fnc(self, cmd.data[1:])
                         else:
                             logging.warning("Unimplemented command: {}".format(int(struct.unpack("!B", cmd.data[:1])[0])))
-                except Queue.Empty as e:
+                except queue.Empty as e:
                     break
 
             if self.state == self.ST_INIT:
