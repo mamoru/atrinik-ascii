@@ -207,8 +207,8 @@ class CommandHandler:
             x = (mask >> 11) & 0x1f
             y = (mask >> 6) & 0x1f
 
-            x -= 17 / 2
-            y -= 17 / 2
+            x -= 17 // 2
+            y -= 17 // 2
 
             x += self.map.pos[0]
             y += self.map.pos[1]
@@ -460,18 +460,18 @@ class MapObject(object):
             step = 1 if xoff > 0 else -1
 
             for x in range(self.pos[0], self.pos[0] + xoff, step):
-                x += 17 / 2 * step + step
+                x += 17 // 2 * step + step
 
-                for y in range(self.pos[1] - 17 / 2, self.pos[1] + 17 / 2):
+                for y in range(self.pos[1] - 17 // 2, self.pos[1] + 17 // 2):
                     self.tile_clear(x, y)
 
         if yoff:
             step = 1 if yoff > 0 else -1
 
             for y in range(self.pos[1], self.pos[1] + yoff, step):
-                y += 17 / 2 * step + step
+                y += 17 // 2 * step + step
 
-                for x in range(self.pos[0] - 17 / 2, self.pos[0] + 17 / 2):
+                for x in range(self.pos[0] - 17 // 2, self.pos[0] + 17 // 2):
                     self.tile_clear(x, y)
 
         self.pos[0] += xoff
