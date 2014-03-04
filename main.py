@@ -691,7 +691,7 @@ _- -   | | _- _
             self.show_text("Enter your account password:\n", clear = False)
             pswd = self.wins["main"].getstr()
 
-            self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_LOGIN), name, "\0", pswd, "\0"]))
+            self.send_command(ServerCommands.ACCOUNT, struct.pack("B", ServerCommands.ACCOUNT_LOGIN) + name + b"\0" + pswd + b"\0")
             self.state += 1
         elif c == ord("2"):
             self.show_intro_gfx()
