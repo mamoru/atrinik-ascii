@@ -1,3 +1,4 @@
+#! /usr/bin/python3.3
 import socket
 import select
 import struct
@@ -8,9 +9,42 @@ except ImportError:
     import Queue as queue
 import time
 import re
-import curses
 import string
 import logging
+
+class _Getch:
+    """Gets ASCII code of a single character from standard input. Does not echo to the screen. Blocking function! """
+    def __init__(self):
+        try:
+            self.impl = _GetchWindows()
+        except ImportError:
+            self.impl = _GetchUnix()
+
+    def __call__(self): return ord(self.impl())
+
+class _GetchUnix:
+    def __init__(self):
+        import tty, sys
+
+    def __call__(self):
+        import sys, tty, termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
+class _GetchWindows:
+    def __init__(self):
+        import msvcrt
+
+    def __call__(self):
+        import msvcrt
+        return msvcrt.getch()
+
 
 class ClientCommand(object):
     CONNECT, SEND, DATA, CLOSE = range(4)
@@ -176,113 +210,6 @@ def data_get_str(data):
     return data, s
 
 class CommandHandler:
-    def handle_command_map(self, data):
-        mapstat = struct.unpack("!B", data[:1])[0]
-        data = data[1:]
-
-        if mapstat != CommandHandler.MAP_UPDATE_CMD_SAME:
-            data, mapname = data_get_str(data)
-            data, bg_music = data_get_str(data)
-            data, weather = data_get_str(data)
-
-            if mapstat == CommandHandler.MAP_UPDATE_CMD_NEW:
-                width, height, xpos, ypos = struct.unpack("!4B", data[:4])
-                data = data[4:]
-                self.map.set_data(width, height, xpos, ypos)
-            else:
-                tile, xoff, yoff, xpos, ypos = struct.unpack("!B2b2B", data[:5])
-                data = data[5:]
-
-                self.map.mapscroll(xoff, yoff, xpos, ypos)
-        else:
-            xpos, ypos = struct.unpack("!2B", data[:2])
-            data = data[2:]
-
-            if xpos - self.map.xpos or ypos - self.map.ypos:
-                self.map.mapscroll(xpos - self.map.xpos, ypos - self.map.ypos, xpos, ypos)
-
-        while data:
-            mask, = struct.unpack("!H", data[:2])
-            data = data[2:]
-            x = (mask >> 11) & 0x1f
-            y = (mask >> 6) & 0x1f
-
-            x -= 17 // 2
-            y -= 17 // 2
-
-            x += self.map.pos[0]
-            y += self.map.pos[1]
-
-            if mask & CommandHandler.MAP2_MASK_CLEAR:
-                self.map.tile_clear(x, y)
-                continue
-
-            if mask & CommandHandler.MAP2_MASK_DARKNESS:
-                data = data[1:]
-
-            num_layers, = struct.unpack("!B", data[:1])
-            data = data[1:]
-
-            for i in range(num_layers):
-                cmd, = struct.unpack("!B", data[:1])
-                data = data[1:]
-
-                if cmd == CommandHandler.MAP2_LAYER_CLEAR:
-                    layer, = struct.unpack("!B", data[:1])
-                    data = data[1:]
-                    self.map.tile_clear_layer(x, y, layer)
-                else:
-                    obj_data = {}
-
-                    obj_data["face"], obj_data["flags"], flags = struct.unpack("!H2B", data[:4])
-                    data = data[4:]
-
-                    if flags & CommandHandler.MAP2_FLAG_MULTI:
-                        obj_data["quick_pos"], = struct.unpack("!B", data[:1])
-                        data = data[1:]
-
-                    if flags & CommandHandler.MAP2_FLAG_NAME:
-                        data, obj_data["player_name"] = data_get_str(data)
-                        data, obj_data["player_color"] = data_get_str(data)
-
-                    if flags & CommandHandler.MAP2_FLAG_PROBE:
-                        obj_data["probe"], = struct.unpack("!B", data[:1])
-                        data = data[1:]
-
-                    if flags & CommandHandler.MAP2_FLAG_HEIGHT:
-                        data = data[2:]
-
-                    if flags & CommandHandler.MAP2_FLAG_ZOOM:
-                        data = data[4:]
-
-                    if flags & CommandHandler.MAP2_FLAG_ALIGN:
-                        data = data[2:]
-
-                    if flags & CommandHandler.MAP2_FLAG_MORE:
-                        flags2, = struct.unpack("!L", data[:4])
-                        data = data[4:]
-
-                        if flags2 & CommandHandler.MAP2_FLAG2_ALPHA:
-                            data = data[1:]
-
-                        if flags2 & CommandHandler.MAP2_FLAG2_ROTATE:
-                            data = data[2:]
-
-                        if flags2 & CommandHandler.MAP2_FLAG2_TARGET:
-                            obj_data["count"], obj_data["is_friend"] = struct.unpack("!LB", data[:5])
-                            data = data[5:]
-
-                    self.map.tile_update_object(x, y, cmd, obj_data)
-
-            ext_flags, = struct.unpack("!B", data[:1])
-            data = data[1:]
-
-            if ext_flags & CommandHandler.MAP2_FLAG_EXT_ANIM:
-                data = data[3:]
-
-        height, width = self.wins["main"].getmaxyx()
-        self.show_text(self.map.render(width = width - 2, height = height))
-
     def handle_command_characters(self, data):
         if len(data) == 0:
             self.state -= 1
@@ -309,9 +236,7 @@ class CommandHandler:
                 "level": level,
             })
 
-
-        self.show_intro_gfx()
-        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))), clear = False)
+        self.show_text("Select character:\n\n{}\n(Enter for new)".format("\n".join("{}: {char[name]} ({char[level]})".format(self.selection_keys[i], char = character) for i, character in enumerate(self.characters))))
 
     def handle_command_player(self, data):
         if self.state == self.ST_WAITPLAY:
@@ -324,7 +249,7 @@ class CommandHandler:
     def handle_command_drawinfo(self, data):
         type, color = struct.unpack("!B6s", data[:7])
         data, msg = data_get_str(data[8:])
-        self.show_text(msg, win = "status", center = False)
+        self.show_text(msg)
 
     def handle_command_version(self, data):
         try:
@@ -342,11 +267,10 @@ class CommandHandler:
         if self.state == self.ST_WAITSETUP:
             self.state += 1
 
-            self.show_intro_gfx()
-            self.show_text("Connected to {}.\n1: Login\n2: Register".format(self.server["name"]), clear = False)
+            self.show_text("Connected to {}.\n1: Login\n2: Register".format(self.server["name"]))
 
     commands = [
-        ("Map", handle_command_map),
+        ("Map", None),
         ("Drawinfo", handle_command_drawinfo),
         ("File update", None),
         ("Item", None),
@@ -443,104 +367,6 @@ class ClientPlayer(object):
     def __init__(self):
         self.socket_version = 0
 
-class GameObject(object):
-    def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.env = None
-        self.map = None
-        self.inv = []
-
-class MapObject(object):
-    def __init__(self):
-        self.tiles = {}
-        self.xpos = 0
-        self.ypos = 0
-        self.pos = [0, 0]
-
-    def set_data(self, width, height, xpos, ypos):
-        self.xpos = xpos
-        self.ypos = ypos
-        self.pos = [0, 0]
-        self.width = width
-        self.height = height
-
-    def mapscroll(self, xoff, yoff, xpos, ypos):
-        if xoff:
-            step = 1 if xoff > 0 else -1
-
-            for x in range(self.pos[0], self.pos[0] + xoff, step):
-                x += 17 // 2 * step + step
-
-                for y in range(self.pos[1] - 17 // 2, self.pos[1] + 17 // 2):
-                    self.tile_clear(x, y)
-
-        if yoff:
-            step = 1 if yoff > 0 else -1
-
-            for y in range(self.pos[1], self.pos[1] + yoff, step):
-                y += 17 // 2 * step + step
-
-                for x in range(self.pos[0] - 17 // 2, self.pos[0] + 17 // 2):
-                    self.tile_clear(x, y)
-
-        self.pos[0] += xoff
-        self.pos[1] += yoff
-
-        self.xpos = xpos
-        self.ypos = ypos
-
-    def tile_clear_layer(self, x, y, layer):
-        try:
-            self.tiles[x][y][layer] = None
-        except KeyError:
-            logging.warning("No such layer ({}) on tile: {},{}".format(layer, x, y))
-
-    def tile_clear(self, x, y):
-        try:
-            self.tiles[x][y].clear()
-        except KeyError:
-            logging.warning("No such tile: {},{}".format(x, y))
-
-    def tile_update_object(self, x, y, layer, data):
-        if not x in self.tiles:
-            self.tiles[x] = {}
-
-        if not y in self.tiles[x]:
-            self.tiles[x][y] = {}
-
-        if not layer in self.tiles[x][y] or not self.tiles[x][y][layer]:
-            self.tiles[x][y][layer] = GameObject()
-
-        for attr in data:
-            setattr(self.tiles[x][y][layer], attr, data[attr])
-
-    def render(self, width = 20, height = 20):
-        l = [[" " for x in range(width)] for y in range(height)]
-
-        for x2, x in enumerate(range(self.pos[0] - width // 2, self.pos[0] + width // 2)):
-            for y2, y in enumerate(range(self.pos[1] - height // 2, self.pos[1] + height // 2)):
-                if not x in self.tiles or not y in self.tiles[x]:
-                    continue
-
-                for layer in self.tiles[x][y]:
-                    obj = self.tiles[x][y][layer]
-
-                    if not obj:
-                        continue
-
-                    c = " "
-
-                    if hasattr(obj, "player_name"):
-                        c = "P"
-                    elif hasattr(obj, "count"):
-                        c = "N" if obj.is_friend else "M"
-                    elif (layer + 1) % 7 == 5:
-                        c = "#"
-
-                    l[y2][x2] = c
-
-        return "\n".join("".join(line) for line in l)
 
 class Client(object):
     ST_INIT, \
@@ -559,69 +385,19 @@ class Client(object):
     ST_WAITPLAY, \
     ST_PLAY = range(15)
 
-    def __init__(self, screen):
-        self.screen = screen
-
-        curses.start_color()
-        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-
-        self.screen.bkgd(curses.color_pair(1))
-        self.screen.refresh()
-        self.screen.nodelay(1)
-
-        self.height, self.width = screen.getmaxyx()
-
-        self.wins = {}
-        self.wins["main"] = curses.newwin(self.height - 3, self.width, 0, 0)
-        self.wins["status"] = curses.newwin(3, self.width, self.height - 3, 0)
-
+    def __init__(self):
         self.socket_thread = SocketClientThread()
         self.socket_thread.start()
 
         self.metaserver_thread = MetaserverThread()
         self.metaserver_thread.start()
 
-        self.map = MapObject()
-
         self.alive = True
         self.state = self.ST_INIT
         self.selection_keys = string.digits[1:] + string.ascii_lowercase
 
-    def show_text(self, text, center = True, win = "main", clear = True, align = None, valign = None):
-        if clear:
-            self.wins[win].clear()
-            self.wins[win].box()
-
-        height, width = self.wins[win].getmaxyx()
-        height -= 2
-        width -= 2
-
-        if center and not align and not valign:
-            align = "center"
-            valign = "middle"
-
-        lines = text.split("\n")[-height:]
-
-        if align == "right":
-            longest = max(len(line) for line in lines)
-
-        for y, line in enumerate(lines):
-            x = 1
-            y += 1
-
-            if align == "center":
-                x += width // 2 - len(line) // 2
-            elif align == "right":
-                x += width - longest
-
-            if valign == "middle":
-                y += height // 2 - len(lines) // 2
-            elif valign == "bottom":
-                y += height - len(lines)
-
-            self.wins[win].addstr(y, x, line)
-
-        self.wins[win].refresh()
+    def show_text(self, text):
+        print(text)
 
     def connect(self, server):
         self.socket_thread.cmd_q.put(ClientCommand(ClientCommand.CONNECT, (server["host"], server["port"])))
@@ -635,36 +411,6 @@ class Client(object):
     def get_metaservers(self):
         return ["meta.atrinik.org"]
 
-    def show_intro_gfx(self):
-        self.show_text(r"""
-              v .   ._, |_  .,
-           `-._\/  .  \ /    |/_
-               \\  _\, y | \//
-         _\_.___\\, \\/ -.\||
-           `7-,--.`._||  / / ,
-           /'     `-. `./ / |/_.'
-                     |    |//
-                     |_    /
-                     |-   |
-                     |   =|
-                     |    |
-                    / ,  . \
-        """, align = "right", valign = "top")
-        self.show_text(r"""
-
-
-
-       _-_
-    /~~   ~~\
- /~~         ~~\
-{               }
- \  _-     -_  /
-   ~  \\ //  ~
-_- -   | | _- _
-  _ -  | |   -_
-      // \\
-        """, align = "left", valign = "top", clear = False)
-
     def loop(self):
         while self.alive:
             while True:
@@ -676,8 +422,7 @@ _- -   | | _- _
                             self.show_text("Failed to connect to metaserver: {}".format(cmd.data.data))
                     elif cmd.cmd_type == ClientCommand.DATA:
                         self.servers = cmd.data
-                        self.show_intro_gfx()
-                        self.show_text("Select server to connect to:\n\n{}".format("\n".join("{}: {}".format(i + 1, server["name"]) for i, server in enumerate(self.servers))), clear = False)
+                        self.show_text("Select server to connect to:\n\n{}".format("\n".join("{}: {}".format(i + 1, server["name"]) for i, server in enumerate(self.servers))))
                         self.state += 1
                 except queue.Empty as e:
                     break
@@ -701,14 +446,13 @@ _- -   | | _- _
                     break
 
             if self.state == self.ST_INIT:
-                self.show_intro_gfx()
-                self.show_text("Welcome to Atrinik!\nPlease wait, connecting to the metaserver...", clear = False)
+                self.show_text("Welcome to Atrinik!\nPlease wait, connecting to the metaserver...")
                 self.state += 1
             elif self.state == self.ST_METASERVER:
                 self.metaserver_thread.cmd_q.put(ClientCommand(ClientCommand.CONNECT, self.get_metaservers()))
                 self.state += 1
             elif self.state == self.ST_CHOOSESERVER:
-                c = self.screen.getch()
+                c = _Getch()()
 
                 if c != -1 and chr(c) in self.selection_keys:
                     idx = self.selection_keys.index(chr(c))
@@ -717,8 +461,7 @@ _- -   | | _- _
                         self.server = self.servers[idx]
                         self.state += 1
             elif self.state == self.ST_CONNECT:
-                self.show_intro_gfx()
-                self.show_text("Connecting to {}...".format(self.server["name"]), clear = False)
+                self.show_text("Connecting to {}...".format(self.server["name"]))
                 self.cpl = ClientPlayer()
                 self.connect(self.server)
                 self.state += 1
@@ -729,36 +472,23 @@ _- -   | | _- _
                 self.send_command(ServerCommands.SETUP, struct.pack("!BB", ServerCommands.SETUP_SOUND, 0))
                 self.state += 1
             elif self.state == self.ST_LOGIN:
-                c = self.screen.getch()
+                c = _Getch()()
 
                 if c == ord("1"):
-                    self.show_intro_gfx()
-                    self.show_text("Enter your account name:\n", clear = False)
-                    curses.echo()
-                    name = self.wins["main"].getstr()
-                    curses.noecho()
-                    self.show_intro_gfx()
-                    self.show_text("Enter your account password:\n", clear = False)
-                    pswd = self.wins["main"].getstr()
+                    acct = input("Enter your account name:\n").encode('ascii', 'ignore')
+                    pswd = input("Enter your account password:\n").encode('ascii', 'ignore')
 
-                    self.send_command(ServerCommands.ACCOUNT, struct.pack("B", ServerCommands.ACCOUNT_LOGIN) + name + b"\0" + pswd + b"\0")
+                    self.send_command(ServerCommands.ACCOUNT, struct.pack("B", ServerCommands.ACCOUNT_LOGIN) + acct + b"\0" + pswd + b"\0")
                     self.state += 1
                 elif c == ord("2"):
-                    self.show_intro_gfx()
-                    self.show_text("Enter new account name:\n", clear = False)
-                    curses.echo()
-                    name = self.wins["main"].getstr()
-                    curses.noecho()
-                    self.show_intro_gfx()
-                    self.show_text("Enter password:\n")
-                    pswd = self.wins["main"].getstr()
-                    self.show_text("Verify password:\n")
-                    pswd2 = self.wins["main"].getstr()
+                    acct = input("Enter new account name:\n").encode('ascii', 'ignore')
+                    pswd = input("Enter password:\n").encode('ascii', 'ignore')
+                    pswd2 = input("Verify password:\n").encode('ascii', 'ignore')
 
-                    self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_REGISTER), name, "\0", pswd, "\0", pswd2, "\0"]))
+                    self.send_command(ServerCommands.ACCOUNT, "".join([struct.pack("!B", ServerCommands.ACCOUNT_REGISTER), acct, "\0", pswd, "\0", pswd2, "\0"]))
                     self.state += 1
             elif self.state == self.ST_CHARACTERS:
-                c = self.screen.getch()
+                c = _Getch()()
 
                 if c != -1 and chr(c) in self.selection_keys:
                     idx = self.selection_keys.index(chr(c))
@@ -767,28 +497,21 @@ _- -   | | _- _
                         self.send_command(ServerCommands.ACCOUNT, struct.pack("!B", ServerCommands.ACCOUNT_LOGIN_CHAR) + self.characters[idx]["name"].encode("ascii"))
                         self.state += 1
             elif self.state == self.ST_PLAY:
-                c = self.screen.getch()
-
-                if c == curses.KEY_UP:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 1, 0))
-                elif c == curses.KEY_DOWN:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 5, 0))
-                elif c == curses.KEY_RIGHT:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 3, 0))
-                elif c == curses.KEY_LEFT:
-                    self.send_command(ServerCommands.MOVE, struct.pack("!2B", 7, 0))
+                print("success!")
+                exit()
 
             time.sleep(0.01)
 
-def main(screen):
+
+def main():
     logging.basicConfig(filename = "client.log",
                         filemode = "w",
                         level = logging.DEBUG,
                         format = "%(asctime)s.%(msecs).03d %(levelname)8s: %(message)s",
                         datefmt = "%Y-%m-%d %H:%M:%S")
-    client = Client(screen)
+    client = Client()
     client.state = client.ST_INIT
     client.loop()
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    main()
